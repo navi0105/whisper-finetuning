@@ -2,6 +2,7 @@ import argparse
 import os
 import whisper
 import torch
+import pandas as pd
 from pathlib import Path
 from tqdm import tqdm
 
@@ -9,20 +10,26 @@ def parse_args():
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
-        "--data-file",
+        "--data-csv",
         type=str,
         required=True,
-        help="Data file for decode / transcription, \
-              the format of each line in file should be \
-              \"<audio_path><sep><lyric>\" \
-              e.g. audio_dir/audio_1.mp3\tspeech content in this audio \
-              you can use --sep flag to change the separator between audio and transcription"
+        help="Data csv file for decode / transcription"
     )
     parser.add_argument(
         "--sep",
         type=str,
-        default='\t',
+        default=',',
         help="the separator between audio and transcription in data_file"
+    )
+    parser.add_argument(
+        "--audio-column",
+        type=str,
+        default='song_path'
+    )
+    parser.add_argument(
+        "--lyric-column",
+        type=str,
+        default='lyric'
     )
     parser.add_argument(
         "--model",
@@ -113,9 +120,9 @@ def main():
         device = 'cpu'
 
     model = whisper.load_model(name=args.model, device=device)
-    data = read_data(data_path=args.data_file,
-                     sep=args.sep)
-    
+    df = pd.read_csv(args.data_csv, sep=args.sep)
+    data = df[[args.audio_column, args.lyric_column]].values
+
     transcribe_result = transcribe(model=model,
                                     data=data,
                                     task=args.task,

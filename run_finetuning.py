@@ -113,7 +113,7 @@ def get_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--seed",
         type=int,
-        default=42,
+        default=9527,
         help="Random seed for reproducibility",
     )
     return parser
@@ -237,8 +237,6 @@ def main():
 
     tokenizer = get_tokenizer(multilingual=".en" not in args.model, task="transcribe")
     model = whisper.load_model(args.model, args.device)
-    #  -1 is for the special token `sot_prev` and the other half is for the transcribed tokens
-    max_prompt_length = model.dims.n_text_ctx // 2 - 1
 
     fp16 = args.device == "cuda"
     train_loader = get_dataloader(
@@ -257,30 +255,7 @@ def main():
         no_timestamps=args.no_timestamps_training,
         shuffle=True  
     )
-    # train_loader = get_dataloader(
-    #     json=args.train_json,
-    #     tokenizer=tokenizer,
-    #     batch_size=args.batch_size,
-    #     fp16=fp16,
-    #     no_timestamps_training=args.no_timestamps_training,
-    #     max_prompt_length=max_prompt_length,
-    #     prompt_use_rate=args.prompt_use_rate,
-    #     no_timestamps_rate=args.no_timestamps_rate,
-    #     shuffle=True,
-    # )
-    # dev_loader = get_dataloader(
-    #     json=args.dev_json,
-    #     tokenizer=tokenizer,
-    #     batch_size=args.dev_batch_size,
-    #     fp16=fp16,
-    #     no_timestamps_training=args.no_timestamps_training,
-    #     max_prompt_length=max_prompt_length,
-    #     # always use prompts and timestamps for validation to make it deterministic
-    #     prompt_use_rate=1.0,
-    #     no_timestamps_rate=0.0,
-    #     shuffle=False,
-    # )
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=2e-4)
     scheduler = get_linear_schedule_with_warmup(
         optimizer, num_warmup_steps=args.warmup_steps, num_training_steps=args.train_steps
     )
