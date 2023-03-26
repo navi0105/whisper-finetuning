@@ -16,23 +16,24 @@ from transformers import get_linear_schedule_with_warmup
 from whisper import Whisper
 from whisper.tokenizer import get_tokenizer
 
-from dataloader import get_dataloader
+from cmedia_dataloader import get_dataloader
+# from dataloader import get_dataloader
 
 
 def get_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Fine-tune a Whisper model for ASR")
     # Dataloader-related arguments
     parser.add_argument(
-        "--train-json",
+        "--train-csv",
         type=str,
         required=True,
-        help="Path to a json file containing training data",
+        help="Path to a csv file containing training data",
     )
     parser.add_argument(
-        "--dev-json",
+        "--dev-csv",
         type=str,
         required=True,
-        help="Path to a json file containing development data",
+        help="Path to a csv file containing development data",
     )
     parser.add_argument("--batch-size", type=int, default=1, help="Batch size for training")
     parser.add_argument("--dev-batch-size", type=int, default=16, help="Batch size for validation")
@@ -241,28 +242,44 @@ def main():
 
     fp16 = args.device == "cuda"
     train_loader = get_dataloader(
-        json=args.train_json,
+        args.train_csv,
         tokenizer=tokenizer,
         batch_size=args.batch_size,
         fp16=fp16,
-        no_timestamps_training=args.no_timestamps_training,
-        max_prompt_length=max_prompt_length,
-        prompt_use_rate=args.prompt_use_rate,
-        no_timestamps_rate=args.no_timestamps_rate,
-        shuffle=True,
+        no_timestamps=args.no_timestamps_training,
+        shuffle=True    
     )
     dev_loader = get_dataloader(
-        json=args.dev_json,
+        csv=args.dev_csv,
         tokenizer=tokenizer,
         batch_size=args.dev_batch_size,
         fp16=fp16,
-        no_timestamps_training=args.no_timestamps_training,
-        max_prompt_length=max_prompt_length,
-        # always use prompts and timestamps for validation to make it deterministic
-        prompt_use_rate=1.0,
-        no_timestamps_rate=0.0,
-        shuffle=False,
+        no_timestamps=args.no_timestamps_training,
+        shuffle=True  
     )
+    # train_loader = get_dataloader(
+    #     json=args.train_json,
+    #     tokenizer=tokenizer,
+    #     batch_size=args.batch_size,
+    #     fp16=fp16,
+    #     no_timestamps_training=args.no_timestamps_training,
+    #     max_prompt_length=max_prompt_length,
+    #     prompt_use_rate=args.prompt_use_rate,
+    #     no_timestamps_rate=args.no_timestamps_rate,
+    #     shuffle=True,
+    # )
+    # dev_loader = get_dataloader(
+    #     json=args.dev_json,
+    #     tokenizer=tokenizer,
+    #     batch_size=args.dev_batch_size,
+    #     fp16=fp16,
+    #     no_timestamps_training=args.no_timestamps_training,
+    #     max_prompt_length=max_prompt_length,
+    #     # always use prompts and timestamps for validation to make it deterministic
+    #     prompt_use_rate=1.0,
+    #     no_timestamps_rate=0.0,
+    #     shuffle=False,
+    # )
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     scheduler = get_linear_schedule_with_warmup(
         optimizer, num_warmup_steps=args.warmup_steps, num_training_steps=args.train_steps
