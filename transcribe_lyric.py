@@ -2,7 +2,6 @@ import argparse
 import os
 import json
 import whisper
-import whisperx
 import torch
 import pandas as pd
 from typing import List, Optional
@@ -29,12 +28,6 @@ def parse_args():
         "--transcribe-with-timestamps",
         action='store_true',
         help=""
-    )
-    parser.add_argument(
-        "--use-whisperx",
-        action='store_true',
-        help="use whisperx for timestamp alignment \
-              only available when --transcribe-with-timestamps flag is set"
     )
     parser.add_argument(
         "--audio-column",
@@ -126,11 +119,7 @@ def transcribe_with_timestamps(
         model: whisper.Whisper, 
         data: pd.DataFrame,
         task: str="transcribe", 
-        lang: str='zh',
-        use_whisperx: bool=False,
-        model_align=None,
-        metadata=None,
-        device: str='cpu'):
+        lang: str='zh'):
     transcribe_result = []
     for row in tqdm(data, total=len(data), desc='Transcription'):
         audio_path = row[0]
@@ -144,10 +133,7 @@ def transcribe_with_timestamps(
                                        audio=audio_path,
                                        language=lang)
         
-        if use_whisperx and model_align is not None and metadata is not None:
-            pred_segments = whisperx.align(pred_result['segments'], model_align, metadata, audio_path, device=device)
-        else:
-            pred_segments = pred_result['segments']
+        pred_segments = pred_result['segments']
 
         transcribe_result.append({'ref_text': ref_text,
                                   'ref_timestamps': ref_result,
@@ -179,17 +165,11 @@ def main():
     df = pd.read_csv(args.data_csv, sep=args.sep)
     data = df[[args.audio_column, args.lyric_column]].values
 
-    if args.transcribe_with_timestamps:
-        if args.use_whisperx:
-            model_align, metadata = whisperx.load_align_model(language_code=args.lang, device=device)
-        
+    if args.transcribe_with_timestamps:    
         transcribe_result = transcribe_with_timestamps(model=model,
                                                         data=data,
                                                         task=args.task,
                                                         lang=args.lang,
-                                                        use_whisperx=args.use_whisperx,
-                                                        model_align=model_align,
-                                                        metadata=metadata,
                                                         device=device)
     else:
         transcribe_result = transcribe(model=model,
