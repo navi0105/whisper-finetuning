@@ -43,19 +43,9 @@ def get_parser() -> argparse.ArgumentParser:
         help="Always use the no-timestamps training mode",
     )
     parser.add_argument(
-        "--prompt-use-rate",
-        type=float,
-        default=0.5,
-        help="How often to use prompts for conditioning the generation",
-    )
-    parser.add_argument(
-        "--no-timestamps-rate",
-        type=float,
-        default=0.5,
-        help=(
-            "How often to use the no-timestamps mode. Only used if --no-timestamps-training "
-            "is NOT set"
-        ),
+        "--timestamps-only",
+        action='store_true',
+        help=""
     )
 
     # Training-related arguments
@@ -74,7 +64,7 @@ def get_parser() -> argparse.ArgumentParser:
         help="name of the Whisper model to use",
     )
     parser.add_argument("--train-only-decoder", action="store_true", help="train only the decoder")
-    parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate for training")
+    parser.add_argument("--lr", type=float, default=1e-5, help="Learning rate for training")
     parser.add_argument(
         "--accum-grad-steps",
         type=int,
@@ -245,6 +235,7 @@ def main():
         batch_size=args.batch_size,
         fp16=fp16,
         no_timestamps=args.no_timestamps_training,
+        timestamps_only=args.timestamps_only,
         shuffle=True    
     )
     dev_loader = get_dataloader(
@@ -255,7 +246,7 @@ def main():
         no_timestamps=args.no_timestamps_training,
         shuffle=True  
     )
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=2e-4)
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-4)
     scheduler = get_linear_schedule_with_warmup(
         optimizer, num_warmup_steps=args.warmup_steps, num_training_steps=args.train_steps
     )

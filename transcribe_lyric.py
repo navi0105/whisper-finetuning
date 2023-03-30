@@ -1,10 +1,14 @@
 import argparse
 import os
+import json
 import whisper
+import whisperx
 import torch
 import pandas as pd
+from typing import List, Optional
 from pathlib import Path
 from tqdm import tqdm
+from utils.timestamp_handler import TimestampHandler
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -20,6 +24,17 @@ def parse_args():
         type=str,
         default=',',
         help="the separator between audio and transcription in data_file"
+    )
+    parser.add_argument(
+        "--transcribe-with-timestamps",
+        action='store_true',
+        help=""
+    )
+    parser.add_argument(
+        "--use-whisperx",
+        action='store_true',
+        help="use whisperx for timestamp alignment \
+              only available when --transcribe-with-timestamps flag is set"
     )
     parser.add_argument(
         "--audio-column",
@@ -107,11 +122,52 @@ def transcribe(model, data, task: str="transcribe", lang: str='zh'):
             'lyric': lyric,
             'inference': inference}
 
-def write_output(result: dict, output_path, sep):
-    with open(output_path, 'w') as f:
-        f.write(f'{sep}'.join(result.keys()) + '\n')
-        for id, lyric, inference in tqdm(zip(result['audio_id'], result['lyric'], result['inference']), desc='Writing Output'):
-            f.write(f'{sep}'.join([id, lyric, inference]) + '\n')
+def transcribe_with_timestamps(
+        model: whisper.Whisper, 
+        data: pd.DataFrame,
+        task: str="transcribe", 
+        lang: str='zh',
+        use_whisperx: bool=False,
+        model_align=None,
+        metadata=None,
+        device: str='cpu'):
+    transcribe_result = []
+    for row in tqdm(data, total=len(data), desc='Transcription'):
+        audio_path = row[0]
+        ref_lyric_path = row[1]
+        
+        handler = TimestampHandler(file_path=ref_lyric_path)
+        ref_text = handler.get_lyric()
+        ref_result = handler.get_lyric_with_timestamp()
+
+        pred_result = model.transcribe(task=task, 
+                                       audio=audio_path,
+                                       language=lang)
+        
+        if use_whisperx and model_align is not None and metadata is not None:
+            pred_segments = whisperx.align(pred_result['segments'], model_align, metadata, audio_path, device=device)
+        else:
+            pred_segments = pred_result['segments']
+
+        transcribe_result.append({'ref_text': ref_text,
+                                  'ref_timestamps': ref_result,
+                                  'infernece_text': pred_result['text'],
+                                  'inference_timestamps': pred_segments})
+    return transcribe_result
+
+def write_output(result, output_path, sep, with_timestmaps: bool=False):
+    if with_timestmaps is not True:
+        with open(output_path, 'w') as f:
+            f.write(f'{sep}'.join(result.keys()) + '\n')
+            for id, lyric, inference in tqdm(zip(result['audio_id'], result['lyric'], result['inference']), desc='Writing Output'):
+                f.write(f'{sep}'.join([id, lyric, inference]) + '\n')
+    else:
+        assert os.path.splitext(output_path)[-1] == '.json'
+        with open(output_path, 'w') as f:
+            json.dump(result, f, indent=4, ensure_ascii=False)
+
+
+
 
 def main():
     args = parse_args()
@@ -123,14 +179,28 @@ def main():
     df = pd.read_csv(args.data_csv, sep=args.sep)
     data = df[[args.audio_column, args.lyric_column]].values
 
-    transcribe_result = transcribe(model=model,
-                                    data=data,
-                                    task=args.task,
-                                    lang=args.lang)
+    if args.transcribe_with_timestamps:
+        if args.use_whisperx:
+            model_align, metadata = whisperx.load_align_model(language_code=args.lang, device=device)
+        
+        transcribe_result = transcribe_with_timestamps(model=model,
+                                                        data=data,
+                                                        task=args.task,
+                                                        lang=args.lang,
+                                                        use_whisperx=args.use_whisperx,
+                                                        model_align=model_align,
+                                                        metadata=metadata,
+                                                        device=device)
+    else:
+        transcribe_result = transcribe(model=model,
+                                        data=data,
+                                        task=args.task,
+                                        lang=args.lang)
     
     write_output(result=transcribe_result,
                  output_path=args.output,
-                 sep=args.output_sep)
+                 sep=args.output_sep,
+                 with_timestmaps=args.transcribe_with_timestamps)
     
 
 

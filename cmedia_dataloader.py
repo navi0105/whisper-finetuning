@@ -20,7 +20,8 @@ class CmediaDataset(Dataset):
             tokenizer: Tokenizer,
             language: str='zh',
             fp16: bool=True,
-            no_timestamps: bool=False
+            no_timestamps: bool=False,
+            timestamps_only: bool=False
     ) -> None:
         # record -> audio_path, text_path_with_char_timestamp
         self.records = records
@@ -28,10 +29,12 @@ class CmediaDataset(Dataset):
         self.language = language
         self.fp16 = fp16
         self.no_timestamps = no_timestamps
+        self.timestamps_only = timestamps_only
     
     def _encode_text_with_timestamps(
             self,
-            text_path: str
+            text_path: str,
+            timestamps_only: bool=False
     ) -> List[int]:
         handler = TimestampHandler(text_path)
         text_with_timestamp = handler.get_lyric_with_timestamp()
@@ -46,7 +49,8 @@ class CmediaDataset(Dataset):
             start_token = self.tokenizer.timestamp_begin + char_info['start'] * 100 // 2
             tokens.append(start_token)
             # char token
-            tokens.extend(self.tokenizer.encode(char_info['char']))
+            if timestamps_only != True:
+                tokens.extend(self.tokenizer.encode(char_info['char']))
             # end timestamp
             end_token = self.tokenizer.timestamp_begin + char_info['end'] * 100 // 2
             tokens.append(end_token)
@@ -97,10 +101,11 @@ class CmediaDataset(Dataset):
     def _get_text_tokens(
             self,
             record: Record,
-            no_timestmaps: bool
+            no_timestmaps: bool,
+            timestamps_only: bool=False
     ) -> List[int]:
         if no_timestmaps == False:
-            text_tokens = self._encode_text_with_timestamps(record.text_with_timestamp_path)
+            text_tokens = self._encode_text_with_timestamps(record.text_with_timestamp_path, timestamps_only)
         else:
             text_tokens = self.tokenizer.encode(record.text)
 
@@ -112,8 +117,9 @@ class CmediaDataset(Dataset):
     def __getitem__(self, idx):
         record = self.records[idx]
         no_timestamps = self.no_timestamps
+        timestamps_only = self.timestamps_only
         
-        text_tokens = self._get_text_tokens(record, no_timestamps)
+        text_tokens = self._get_text_tokens(record, no_timestamps, timestamps_only)
         is_text_empty = len(text_tokens) == 0
         special_tokens = self._get_special_tokens(is_text_empty, self.language, no_timestamps)
 
@@ -142,6 +148,7 @@ def get_dataloader(
     language: str = 'zh',
     fp16: bool = True,
     no_timestamps: bool = False,
+    timestamps_only: bool = False,
     shuffle: bool = True,
 ) -> DataLoader:
     records = read_data_from_csv(csv)
@@ -150,7 +157,8 @@ def get_dataloader(
         tokenizer,
         language=language,
         fp16=fp16,
-        no_timestamps=no_timestamps
+        no_timestamps=no_timestamps,
+        timestamps_only=timestamps_only
     )
     return DataLoader(
         dataset,
