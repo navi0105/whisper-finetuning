@@ -6,6 +6,7 @@ import numpy as np
 from typing import Iterator, Tuple
 from tqdm import tqdm
 import copy
+from pathlib import Path
 
 import torch
 import torch.nn as nn
@@ -66,6 +67,10 @@ def parse_args():
         default=8
     )
     parser.add_argument(
+        '--freeze-encoder',
+        action='store_true'
+    )
+    parser.add_argument(
         '--lr',
         type=float,
         default=1e-5
@@ -95,6 +100,16 @@ def parse_args():
         '--save-dir',
         type=str,
         default='result'
+    )
+    parser.add_argument(
+        '--save-all-checkpoints',
+        type=bool,
+        default=False
+    )
+    parser.add_argument(
+        '--seed',
+        type=int,
+        default=114514
     )
 
 
@@ -209,6 +224,8 @@ def main_loop(
 ) -> None:
     min_loss, init_text_loss, init_phoneme_loss = evaluate(model, dev_loader, loss_fn)
     avg_train_loss = 0
+    avg_train_text_loss = 0
+    avg_train_phoneme_loss = 0
     print(f"Initial loss: {min_loss, init_text_loss, init_phoneme_loss}")
     pbar = tqdm(range(1, args.train_steps + 1))
     train_iter = infinite_iter(train_loader)
@@ -224,10 +241,14 @@ def main_loop(
         )
         pbar.set_postfix({"loss": train_loss, 'text loss:': train_text_loss, 'phoneme loss': train_phoneme_loss})
         avg_train_loss += train_loss
+        avg_train_text_loss += train_text_loss
+        avg_train_phoneme_loss += train_phoneme_loss
         if step % args.eval_steps == 0:
-            eval_loss = evaluate(model, dev_loader, loss_fn)
-            tqdm.write(f"Step {step}: validation loss={eval_loss}")
-            tqdm.write(f"Step {step}: training loss={avg_train_loss / args.eval_steps}")
+            eval_loss, eval_text_loss, eval_phoneme_loss = evaluate(model, dev_loader, loss_fn)
+            tqdm.write(f"Step {step}: valid loss={eval_loss}, valid text loss={eval_text_loss}, valid phoneme loss={eval_phoneme_loss}")
+            tqdm.write(f"Step {step}: train loss={avg_train_loss / args.eval_steps}, \
+                        train text loss={avg_train_text_loss / args.eval_steps}, \
+                       train phoneme loss={avg_train_phoneme_loss / args.eval_steps}")
             avg_train_loss = 0
         
             if eval_loss < min_loss:
@@ -250,6 +271,11 @@ def compute_ctc_loss(output, labels, ctc_loss, device):
 
 def main():
     args = parse_args()
+    set_seed(args.seed)
+    torch.backends.cudnn.benchmark = False
+    Path(args.save_dir).mkdir(parents=True, exist_ok=True)
+    save_args(args, f"{args.save_dir}/args.json")
+
 
     device = args.device
     if 'cuda' in device and torch.cuda.is_available() == False:
@@ -275,14 +301,22 @@ def main():
                              embed_dim=whisper_dim[args.whisper_model],
                              text_output_dim=len(tokenizer),
                              phoneme_output_dim=len(phoneme_map),
+                             freeze_encoder=args.freeze_encoder,
                              device=device).to(device)
     
-    optimizer = torch.optim.AdamW([{'params': align_model.whisper_model.parameters(), 'lr': args.lr},
-                                   {'params': align_model.fc_text.parameters(), 'lr': args.lr},
-                                   {'params': align_model.fc_phoneme.parameters(), 'lr': args.lr}],
-                                    lr=args.lr,
-                                    weight_decay=2e-5
+    if args.freeze_encoder:
+        optimizer = torch.optim.AdamW([{'params': align_model.fc_text.parameters(), 'lr': args.lr},
+                                       {'params': align_model.fc_phoneme.parameters(), 'lr': args.lr}],
+                                        lr=args.lr,
+                                        weight_decay=1e-5
                                   )
+    else:
+        optimizer = torch.optim.AdamW([{'params': align_model.whisper_model.parameters(), 'lr': args.lr},
+                                    {'params': align_model.fc_text.parameters(), 'lr': args.lr},
+                                    {'params': align_model.fc_phoneme.parameters(), 'lr': args.lr}],
+                                        lr=args.lr,
+                                        weight_decay=1e-5
+                                    )
     scheduler = scheduler = get_linear_schedule_with_warmup(
         optimizer, num_warmup_steps=args.warmup_steps, num_training_steps=args.train_steps
     )

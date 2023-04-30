@@ -23,7 +23,7 @@ class AlignModel(torch.nn.Module):
         embed_dim: int=1280,
         hidden_dim: int=2048,
         hidden_layers: int=3,
-        dropout: float=0.3,
+        dropout: float=0.2,
         text_output_dim: int=10000,
         phoneme_output_dim: int=100,
         freeze_encoder: bool=False,
