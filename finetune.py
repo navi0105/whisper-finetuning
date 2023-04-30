@@ -317,15 +317,15 @@ def main():
                              device=device).to(device)
     
     if args.freeze_encoder:
-        optimizer = torch.optim.AdamW([{'params': align_model.fc_text.parameters(), 'lr': args.lr},
-                                       {'params': align_model.fc_phoneme.parameters(), 'lr': args.lr}],
+        optimizer = torch.optim.AdamW([{'params': align_model.text_rnn.parameters(), 'lr': args.lr},
+                                       {'params': align_model.phoneme_rnn.parameters(), 'lr': args.lr}],
                                         lr=args.lr,
                                         weight_decay=1e-5
                                   )
     else:
         optimizer = torch.optim.AdamW([{'params': align_model.whisper_model.parameters(), 'lr': args.lr / 100},
-                                    {'params': align_model.fc_text.parameters(), 'lr': args.lr},
-                                    {'params': align_model.fc_phoneme.parameters(), 'lr': args.lr}],
+                                    {'params': align_model.text_rnn.parameters(), 'lr': args.lr},
+                                    {'params': align_model.phoneme_rnn.parameters(), 'lr': args.lr}],
                                         lr=args.lr,
                                         weight_decay=1e-5
                                     )
