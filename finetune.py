@@ -47,7 +47,12 @@ def parse_args():
     parser.add_argument(
         '--device',
         type=str,
-        default='cuda'
+        default='cuda:1'
+    )
+    parser.add_argument(
+        '--fp16',
+        type=bool,
+        default=True
     )
 
     # Training Argument
@@ -66,6 +71,10 @@ def parse_args():
         type=int,
         default=8
     )
+    # parser.add_argument(
+    #     '--train-phoneme',
+    #     action='store_true'
+    # )
     parser.add_argument(
         '--freeze-encoder',
         action='store_true'
@@ -245,11 +254,14 @@ def main_loop(
         avg_train_phoneme_loss += train_phoneme_loss
         if step % args.eval_steps == 0:
             eval_loss, eval_text_loss, eval_phoneme_loss = evaluate(model, dev_loader, loss_fn)
+
             tqdm.write(f"Step {step}: valid loss={eval_loss}, valid text loss={eval_text_loss}, valid phoneme loss={eval_phoneme_loss}")
             tqdm.write(f"Step {step}: train loss={avg_train_loss / args.eval_steps}, \
                         train text loss={avg_train_text_loss / args.eval_steps}, \
-                       train phoneme loss={avg_train_phoneme_loss / args.eval_steps}")
+                        train phoneme loss={avg_train_phoneme_loss / args.eval_steps}")
             avg_train_loss = 0
+            avg_train_text_loss = 0
+            avg_train_phoneme_loss = 0
         
             if eval_loss < min_loss:
                 min_loss = eval_loss
@@ -311,7 +323,7 @@ def main():
                                         weight_decay=1e-5
                                   )
     else:
-        optimizer = torch.optim.AdamW([{'params': align_model.whisper_model.parameters(), 'lr': args.lr},
+        optimizer = torch.optim.AdamW([{'params': align_model.whisper_model.parameters(), 'lr': args.lr / 100},
                                     {'params': align_model.fc_text.parameters(), 'lr': args.lr},
                                     {'params': align_model.fc_phoneme.parameters(), 'lr': args.lr}],
                                         lr=args.lr,

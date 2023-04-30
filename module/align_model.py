@@ -6,9 +6,10 @@ class BasicBlock(nn.Module):
     def __init__(self, input_dim, output_dim, dropout=0.3):
         super(BasicBlock, self).__init__()
 
+        self.dtype = torch.float
+
         self.block = nn.Sequential(
-            nn.Linear(input_dim, output_dim),
-            nn.Dropout(dropout),
+            nn.Linear(input_dim, output_dim, dtype=self.dtype),
             nn.ReLU(),
         )
 
@@ -31,17 +32,18 @@ class AlignModel(torch.nn.Module):
         ) -> None:
         super().__init__()
         self.whisper_model = whisper_model
+        self.dtype = torch.float
         
         self.fc_text = nn.Sequential(
             BasicBlock(embed_dim, hidden_dim, dropout),
             *[BasicBlock(hidden_dim, hidden_dim, dropout) for _ in range(hidden_layers)],
-            nn.Linear(hidden_dim, text_output_dim)
+            nn.Linear(hidden_dim, text_output_dim, dtype=self.dtype)
         )
 
         self.fc_phoneme = nn.Sequential(
             BasicBlock(embed_dim, hidden_dim, dropout),
             *[BasicBlock(hidden_dim, hidden_dim, dropout) for _ in range(hidden_layers)],
-            nn.Linear(hidden_dim, phoneme_output_dim)
+            nn.Linear(hidden_dim, phoneme_output_dim, dtype=self.dtype)
         )
 
         self.freeze_encoder = freeze_encoder

@@ -1,5 +1,6 @@
 from typing import List
 from data_processor.record import Record
+import os
 
 import torch
 from torch.utils.data import DataLoader, Dataset
@@ -8,7 +9,7 @@ from torch.nn.utils.rnn import pad_sequence
 from whisper import log_mel_spectrogram, pad_or_trim
 from whisper.audio import N_FRAMES
 
-from data_processor.record import read_data_from_json
+from data_processor.record import read_data_from_json, read_data_from_csv
 
 class OpencpopDataset(Dataset):
     def __init__(
@@ -16,7 +17,8 @@ class OpencpopDataset(Dataset):
         records: List[Record],
         tokenizer,
         phoneme_map: dict,
-        fp16: bool=True
+        has_phoneme_data: bool=False,
+        fp16: bool=False
         ) -> None:
         self.records = records
         self.tokenizer = tokenizer
@@ -64,14 +66,12 @@ class OpencpopDataset(Dataset):
 def collate_fn(data):
     x, y_text, y_phoneme = zip(*data)
 
-    try:
-        x = pad_sequence(x, batch_first=True, padding_value=0)
-        y_text = pad_sequence(y_text, batch_first=True, padding_value=0)
-        y_phoneme = pad_sequence(y_phoneme, batch_first=True, padding_value=-100)
-    except:
-        print(y_text)
-        print(y_phoneme)
-        exit()
+    x = pad_sequence(x, batch_first=True, padding_value=0)
+    y_text = pad_sequence(y_text, batch_first=True, padding_value=0)
+    y_phoneme = pad_sequence(y_phoneme, batch_first=True, padding_value=-100)
+
+    y_text[y_text == 0] = -100
+    y_text[y_text == 102] = -100
 
     return x, y_text, y_phoneme
 
@@ -83,7 +83,11 @@ def get_dataloader(
     fp16: bool=False,
     shuffle: bool=False
     ) -> DataLoader:
-    records = read_data_from_json(data_path)
+    assert os.path.exists(data_path)
+    if os.path.splitext(data_path)[-1] == '.csv':
+        records = read_data_from_csv(data_path)
+    else:
+        records = read_data_from_json(data_path)
 
     dataset = OpencpopDataset(records=records,
                               tokenizer=tokenizer,
