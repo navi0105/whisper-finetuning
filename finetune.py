@@ -333,7 +333,7 @@ def main():
         optimizer, num_warmup_steps=args.warmup_steps, num_training_steps=args.train_steps
     )
 
-    ctc_loss = torch.nn.CTCLoss()
+    ctc_loss = torch.nn.CTCLoss(zero_infinity=True)
 
     main_loop(
         model=align_model,
