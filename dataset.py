@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 from data_processor.record import Record
 import os
 
@@ -16,14 +16,16 @@ class OpencpopDataset(Dataset):
         self,
         records: List[Record],
         tokenizer,
-        phoneme_map: dict,
-        has_phoneme_data: bool=False,
-        fp16: bool=False
+        phoneme_map: Optional[dict]=None,
+        get_phoneme: bool=False,
+        only_alt: bool=False
         ) -> None:
+
         self.records = records
         self.tokenizer = tokenizer
         self.phoneme_map = phoneme_map
-        self.fp16 = fp16
+        self.get_phoneme = get_phoneme
+        self.only_alt = only_alt
 
     def _calculate_mel(
         self,
@@ -31,8 +33,6 @@ class OpencpopDataset(Dataset):
     ) -> torch.Tensor:
         mel = log_mel_spectrogram(audio_path)
         mel = pad_or_trim(mel, N_FRAMES)
-        if self.fp16:
-            mel = mel.half()
 
         return mel
 
@@ -59,46 +59,80 @@ class OpencpopDataset(Dataset):
 
         mel = self._calculate_mel(record.audio_path)
         text_token = self._encode_text(record.text)
-        phoneme_seq = self._get_phoneme_token(record.phoneme_seq)
 
-        return (mel, text_token, phoneme_seq)
+        if self.get_phoneme:
+            phoneme_seq = self._get_phoneme_token(record.phoneme_seq)
+        else:
+            phoneme_seq = None
+        
+        if self.only_alt == False:
+            lyric_onset_offset = record.lyric_onset_offset
+        else:
+            lyric_onset_offset = None
+
+        return (mel, text_token, phoneme_seq, lyric_onset_offset)
     
-def collate_fn(data):
-    x, y_text, y_phoneme = zip(*data)
+    def get_frame_label(self, lyric_tokens, lyric_word_onset_offset, hop_size_second=0.02):
+        total_frame_num = max([lyric_word_onset_offset[i][-1][-1] for i in range(len(lyric_word_onset_offset))])
+        total_frame_num = int(round(total_frame_num / hop_size_second)) + 1
 
-    x = pad_sequence(x, batch_first=True, padding_value=0)
-    y_text = pad_sequence(y_text, batch_first=True, padding_value=0)
-    y_phoneme = pad_sequence(y_phoneme, batch_first=True, padding_value=-100)
+        frame_labels = torch.full((len(lyric_word_onset_offset), total_frame_num), 0)
 
-    y_text[y_text == 0] = -100
-    y_text[y_text == 102] = -100
+        for i in range(len(lyric_word_onset_offset)):
+            for j in range(len(lyric_word_onset_offset[i])):
+                onset_frame = int(round(lyric_word_onset_offset[i][j][0] / hop_size_second))
+                offset_frame = int(round(lyric_word_onset_offset[i][j][1] / hop_size_second)) + 1
+                frame_labels[i][onset_frame: offset_frame] = lyric_tokens[i][j]
 
-    return x, y_text, y_phoneme
+        return frame_labels
+
+    def collate_fn(self, data):
+        x, y_text, y_phoneme, lyric_word_onset_offset = zip(*data)
+
+        x = pad_sequence(x, batch_first=True, padding_value=0)
+        y_text = pad_sequence(y_text, batch_first=True, padding_value=0)
+
+        y_text[y_text == 0] = -100
+        y_text[y_text == 102] = -100
+
+        if self.get_phoneme:
+            y_phoneme = data[2]
+            y_phoneme = pad_sequence(y_phoneme, batch_first=True, padding_value=-100)
+
+        if self.only_alt == False:
+            frame_labels = self.get_frame_label(y_text, lyric_word_onset_offset)
+        else:
+            frame_labels = None
+        
+        
+        return x, y_text, y_phoneme, frame_labels
 
 def get_dataloader(
     data_path: str,
     tokenizer,
     phoneme_map: dict,
     batch_size: int=1,
-    fp16: bool=False,
+    get_phoneme: bool=False,
+    only_alt: bool=False,
     shuffle: bool=False
     ) -> DataLoader:
     assert os.path.exists(data_path)
     if os.path.splitext(data_path)[-1] == '.csv':
-        records = read_data_from_csv(data_path)
+        records = read_data_from_csv(data_path, get_phoneme)
     else:
-        records = read_data_from_json(data_path)
+        records = read_data_from_json(data_path, get_phoneme, only_alt)
 
     dataset = OpencpopDataset(records=records,
                               tokenizer=tokenizer,
                               phoneme_map=phoneme_map,
-                              fp16=fp16)
+                              get_phoneme=get_phoneme,
+                              only_alt=only_alt)
     
     return DataLoader(
         dataset=dataset,
         batch_size=batch_size,
         shuffle=shuffle,
-        collate_fn=collate_fn,
+        collate_fn=dataset.collate_fn,
         num_workers=4,
         pin_memory=True,
     )

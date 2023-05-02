@@ -22,18 +22,23 @@ class RNN(nn.Module):
                  input_size, 
                  hidden_size,
                  output_size,
-                 dropout: float=0.1,
+                 num_layers: int=3,
+                 dropout: float=0.2,
                  batch_first: bool=True, 
                  bidirectional: bool=True) -> None:
         super().__init__()
-        self.rnn = nn.LSTM(input_size=input_size,
+        self.rnn = nn.GRU(input_size=input_size,
                                 hidden_size=hidden_size,
+                                num_layers=num_layers,
+                                dropout=dropout,
                                 batch_first=batch_first,
                                 bidirectional=bidirectional)
+        self.relu = nn.ReLU()
         self.fc = nn.Linear(hidden_size + (bidirectional * hidden_size), output_size)
 
     def forward(self, x):
         out, _ = self.rnn(x)
+        out = self.relu(out)
         out = self.fc(out)
 
         return out
@@ -47,6 +52,7 @@ class AlignModel(torch.nn.Module):
         dropout: float=0.1,
         text_output_dim: int=10000,
         phoneme_output_dim: int=100,
+        train_phoneme: bool=False,
         freeze_encoder: bool=False,
         device: str='cuda'
         ) -> None:
@@ -54,17 +60,21 @@ class AlignModel(torch.nn.Module):
         self.whisper_model = whisper_model
         self.dtype = torch.float
         
-        # Text LM
+        # Text Alignment
         self.text_rnn = RNN(input_size=embed_dim,
                             hidden_size=hidden_dim,
                             output_size=text_output_dim,
                             dropout=dropout)
 
         # Phoneme LM
-        self.phoneme_rnn = RNN(input_size=embed_dim,
-                               hidden_size=hidden_dim,
-                               output_size=phoneme_output_dim,
-                               dropout=dropout)
+        self.train_phoneme = train_phoneme
+        if train_phoneme:
+            self.phoneme_rnn = RNN(input_size=embed_dim,
+                                hidden_size=hidden_dim,
+                                output_size=phoneme_output_dim,
+                                dropout=dropout)
+        else:
+            self.phoneme_rnn = None
 
 
 
@@ -78,7 +88,12 @@ class AlignModel(torch.nn.Module):
         else:
             embed = self.whisper_model.embed_audio(x)
 
-        text_out = self.text_rnn(embed)
-        phoneme_out = self.phoneme_rnn(embed)
+        text_logit = self.text_rnn(embed)
+        if self.train_phoneme:
+            phoneme_logit = self.phoneme_rnn(embed)
+        else:
+            phoneme_logit = None
 
-        return text_out, phoneme_out
+        # TODO: Whisper Logit?
+
+        return text_logit, phoneme_logit
