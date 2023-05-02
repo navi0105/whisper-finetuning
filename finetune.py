@@ -52,7 +52,7 @@ def parse_args():
     parser.add_argument(
         '--device',
         type=str,
-        default='cuda:1'
+        default='cuda'
     )
     parser.add_argument(
         '--fp16',
@@ -329,13 +329,15 @@ def main():
                                       phoneme_map=phoneme_map,
                                       get_phoneme=args.get_phoneme,
                                       only_alt=False,
-                                      batch_size=args.train_batch_size)
+                                      batch_size=args.train_batch_size,
+                                      shuffle=True)
     dev_dataloader = get_dataloader(data_path=args.dev_data,
                                     tokenizer=tokenizer,
                                     phoneme_map=phoneme_map,
                                     get_phoneme=args.get_phoneme,
                                     only_alt=False,
-                                    batch_size=args.dev_batch_size)
+                                    batch_size=args.dev_batch_size,
+                                    shuffle=False)
 
     align_model = AlignModel(whisper_model=whisper_model,
                              embed_dim=whisper_dim[args.whisper_model],
