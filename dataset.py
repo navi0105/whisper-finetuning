@@ -100,7 +100,10 @@ class OpencpopDataset(Dataset):
             y_phoneme = pad_sequence(y_phoneme, batch_first=True, padding_value=-100)
 
         if self.only_alt == False:
-            frame_labels = self.get_frame_label(y_text, lyric_word_onset_offset)
+            try:
+                frame_labels = self.get_frame_label(y_text, lyric_word_onset_offset)
+            except:
+                print(lyric_word_onset_offset)
         else:
             frame_labels = None
         
@@ -127,6 +130,78 @@ def get_dataloader(
                               phoneme_map=phoneme_map,
                               get_phoneme=get_phoneme,
                               only_alt=only_alt)
+    
+    return DataLoader(
+        dataset=dataset,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        collate_fn=dataset.collate_fn,
+        num_workers=4,
+        pin_memory=True,
+    )
+
+class TestAlignDataset(Dataset):
+    def __init__(
+        self,
+        records: List[Record],
+        tokenizer
+    ) -> None:
+        self.records = records
+        self.tokenizer = tokenizer
+
+    def _calculate_mel(
+        self,
+        audio_path: str,
+    ) -> torch.Tensor:
+        mel = log_mel_spectrogram(audio_path)
+        mel = pad_or_trim(mel, N_FRAMES)
+
+        return mel
+    
+    def _encode_text(
+        self,
+        text: str
+    ) -> torch.Tensor:
+        return self.tokenizer.encode(text, add_special_tokens=False, return_tensors='pt').view(-1)
+
+    def __len__(self):
+        return len(self.records)
+    
+    def __getitem__(self, index):
+        record = self.records[index]
+
+        mel = self._calculate_mel(record.audio_path)
+        text_token = self._encode_text(record.text)
+
+        lyric_onset_offset = record.lyric_onset_offset
+
+        return (mel, text_token, lyric_onset_offset)
+    
+    def collate_fn(self, data):
+        x, y_text, lyric_word_onset_offset = zip(*data)
+
+        x = pad_sequence(x, batch_first=True, padding_value=0)
+        y_text = pad_sequence(y_text, batch_first=True, padding_value=0)
+
+        y_text[y_text == 0] = -100
+        y_text[y_text == 102] = -100
+
+        return x, y_text, lyric_word_onset_offset
+    
+
+def get_test_dataloader(
+    data_path: str,
+    tokenizer,
+    batch_size: int=1,
+    get_phoneme: bool=False,
+    only_alt: bool=False,
+    shuffle: bool=False
+    ) -> DataLoader:
+    assert os.path.exists(data_path)
+    records = read_data_from_json(data_path, get_phoneme, only_alt)
+
+    dataset = TestAlignDataset(records=records,
+                              tokenizer=tokenizer)
     
     return DataLoader(
         dataset=dataset,
